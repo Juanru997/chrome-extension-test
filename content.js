@@ -1,11 +1,9 @@
 let pickerActive = false;
-let hoverTarget = null;
-let selectedTarget = null;
+let currentTarget = null;
 let toolbar = null;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'START_PICKER') {
-    selectedTarget = null;
     startPicker();
     sendResponse({ ok: true });
   }
@@ -21,21 +19,11 @@ function startPicker() {
   document.addEventListener('click', onClickPick, true);
 }
 
-function stopPicker({ keepSelectedHighlight = false } = {}) {
+function stopPicker() {
   pickerActive = false;
   document.removeEventListener('mouseover', onHover, true);
   document.removeEventListener('click', onClickPick, true);
-
-  if (hoverTarget && hoverTarget !== selectedTarget) {
-    hoverTarget.classList.remove('logo-grabber-highlight');
-  }
-
-  hoverTarget = null;
-
-  if (!keepSelectedHighlight && selectedTarget) {
-    selectedTarget.classList.remove('logo-grabber-highlight');
-    selectedTarget = null;
-  }
+  clearHighlight();
 }
 
 function onHover(event) {
@@ -43,20 +31,14 @@ function onHover(event) {
     return;
   }
 
-  const element = resolvePickTarget(event.target);
-
-  if (!element || isInsideToolbar(element)) {
+  const element = event.target;
+  if (!(element instanceof Element) || isInsideToolbar(element)) {
     return;
   }
 
-  if (hoverTarget && hoverTarget !== selectedTarget) {
-    hoverTarget.classList.remove('logo-grabber-highlight');
-  }
-
-  hoverTarget = element;
-  if (hoverTarget !== selectedTarget) {
-    hoverTarget.classList.add('logo-grabber-highlight');
-  }
+  clearHighlight();
+  currentTarget = element;
+  currentTarget.classList.add('logo-grabber-highlight');
 }
 
 function onClickPick(event) {
@@ -71,22 +53,22 @@ function onClickPick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  const picked = resolvePickTarget(event.target);
-  if (!picked) {
-    setStatus('No image found there. Click directly on a logo/image.');
+  const element = event.target;
+  if (!(element instanceof Element)) {
     return;
   }
 
-  if (selectedTarget && selectedTarget !== picked) {
-    selectedTarget.classList.remove('logo-grabber-highlight');
-  }
+  currentTarget = element;
+  clearHighlight();
+  currentTarget.classList.add('logo-grabber-highlight');
 
-  selectedTarget = picked;
-  selectedTarget.classList.add('logo-grabber-highlight');
-
-  stopPicker({ keepSelectedHighlight: true });
   showToolbar(event.clientX, event.clientY);
-  setStatus('Logo selected. Use Copy PNG or Save PNG.');
+}
+
+function clearHighlight() {
+  if (currentTarget) {
+    currentTarget.classList.remove('logo-grabber-highlight');
+  }
 }
 
 function isInsideToolbar(node) {
@@ -116,6 +98,7 @@ function showToolbar(x, y) {
 
   toolbar.style.left = `${Math.min(x + 12, window.innerWidth - 260)}px`;
   toolbar.style.top = `${Math.min(y + 12, window.innerHeight - 70)}px`;
+  setStatus('Logo selected.');
 }
 
 function setStatus(message) {
@@ -126,13 +109,13 @@ function setStatus(message) {
 }
 
 async function copyCurrentAsPng() {
-  if (!selectedTarget) {
-    setStatus('No target selected. Click Start logo picker again.');
+  if (!currentTarget) {
+    setStatus('No target selected.');
     return;
   }
 
   try {
-    const blob = await extractPngFromElement(selectedTarget);
+    const blob = await extractPngFromElement(currentTarget);
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     setStatus('PNG copied to clipboard.');
   } catch (error) {
@@ -141,15 +124,15 @@ async function copyCurrentAsPng() {
 }
 
 async function saveCurrentAsPng() {
-  if (!selectedTarget) {
-    setStatus('No target selected. Click Start logo picker again.');
+  if (!currentTarget) {
+    setStatus('No target selected.');
     return;
   }
 
   try {
-    const blob = await extractPngFromElement(selectedTarget);
+    const blob = await extractPngFromElement(currentTarget);
     const dataUrl = await blobToDataUrl(blob);
-    const filename = suggestFilename(selectedTarget);
+    const filename = suggestFilename(currentTarget);
 
     chrome.runtime.sendMessage({ type: 'SAVE_PNG', dataUrl, filename }, (response) => {
       if (chrome.runtime.lastError) {
@@ -174,79 +157,13 @@ function suggestFilename(el) {
   return `${safe || 'logo'}-${Date.now()}.png`;
 }
 
-function resolvePickTarget(node) {
-  if (!(node instanceof Element)) {
-    return null;
-  }
-
-  const direct = findExtractableElement(node);
-  if (direct) {
-    return direct;
-  }
-
-  const ancestor = node.closest('img,svg,image,[src]');
-  if (ancestor) {
-    const extracted = findExtractableElement(ancestor);
-    if (extracted) {
-      return extracted;
-    }
-  }
-
-  let parent = node.parentElement;
-  while (parent) {
-    const extracted = findExtractableElement(parent);
-    if (extracted) {
-      return extracted;
-    }
-    parent = parent.parentElement;
-  }
-
-  if (node instanceof HTMLElement) {
-    const descendant = node.querySelector('img,svg,image,[src]');
-    if (descendant) {
-      const extracted = findExtractableElement(descendant);
-      if (extracted) {
-        return extracted;
-      }
-    }
-  }
-
-  return null;
-}
-
-function findExtractableElement(element) {
-  if (!(element instanceof Element)) {
-    return null;
-  }
-
-  const svgRoot = getSvgRoot(element);
-  if (svgRoot) {
-    return svgRoot;
-  }
-
-  return getImageSource(element) ? element : null;
-}
-
-function getSvgRoot(element) {
-  if (!(element instanceof SVGElement)) {
-    return null;
-  }
-
-  return element.closest('svg') || element;
-}
-
 async function extractPngFromElement(element) {
-  const svg = getSvgRoot(element);
-  if (svg) {
-    return renderSvgToPng(svg);
-  }
-
   const source = getImageSource(element);
   if (!source) {
     throw new Error('Selected element is not an image/logo with src or background-image.');
   }
 
-  const image = await loadImageFromUrl(source);
+  const image = await loadImage(source);
   const canvas = document.createElement('canvas');
   canvas.width = image.naturalWidth || image.width;
   canvas.height = image.naturalHeight || image.height;
@@ -258,7 +175,15 @@ async function extractPngFromElement(element) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(image, 0, 0);
 
-  return canvasToBlob(canvas);
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error('Canvas conversion failed.'));
+      }
+    }, 'image/png');
+  });
 }
 
 function getImageSource(element) {
@@ -267,7 +192,7 @@ function getImageSource(element) {
   }
 
   if (element instanceof SVGImageElement && element.href?.baseVal) {
-    return new URL(element.href.baseVal, window.location.href).href;
+    return element.href.baseVal;
   }
 
   const style = getComputedStyle(element);
@@ -288,61 +213,25 @@ function getImageSource(element) {
   return null;
 }
 
-async function renderSvgToPng(svgElement) {
-  const cloned = svgElement.cloneNode(true);
-
-  if (!cloned.getAttribute('xmlns')) {
-    cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+async function loadImage(url) {
+  const response = await fetch(url, { mode: 'cors', credentials: 'include' });
+  if (!response.ok) {
+    throw new Error(`Image request failed (${response.status}).`);
   }
 
-  const width = svgElement.viewBox?.baseVal?.width || svgElement.clientWidth || svgElement.getBoundingClientRect().width;
-  const height = svgElement.viewBox?.baseVal?.height || svgElement.clientHeight || svgElement.getBoundingClientRect().height;
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
 
-  if (!width || !height) {
-    throw new Error('Could not determine SVG size.');
+  try {
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Could not decode image.'));
+      img.src = blobUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(blobUrl);
   }
-
-  if (!cloned.getAttribute('width')) {
-    cloned.setAttribute('width', String(Math.ceil(width)));
-  }
-
-  if (!cloned.getAttribute('height')) {
-    cloned.setAttribute('height', String(Math.ceil(height)));
-  }
-
-  const markup = new XMLSerializer().serializeToString(cloned);
-  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
-
-  const image = await loadImageFromUrl(svgUrl);
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.ceil(width);
-  canvas.height = Math.ceil(height);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  return canvasToBlob(canvas);
-}
-
-function loadImageFromUrl(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Could not decode image. The site may block cross-origin image export.'));
-    img.src = url;
-  });
-}
-
-function canvasToBlob(canvas) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error('Canvas conversion failed (image may be cross-origin protected).'));
-      }
-    }, 'image/png');
-  });
 }
 
 function blobToDataUrl(blob) {

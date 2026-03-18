@@ -12,15 +12,6 @@ This extension lets you pick logos/images on any website and either:
 3. Click **Load unpacked**.
 4. Select this folder.
 
-## If "Start logo picker" shows an error
-
-If the popup says it cannot start the picker:
-
-1. **Refresh the page once** after installing/updating the extension, then click start again.
-2. **Use a supported page** (`http://`, `https://`, or `file://`). Chrome internal pages like `chrome://` and the extensions page do not allow content scripts.
-3. **Allow file URLs** (only for local files): in `chrome://extensions` -> Logo Grabber -> enable **Allow access to file URLs**.
-4. If the site uses strict iframes, click in the main page area and try again.
-
 ## Usage
 
 1. Open any website.
