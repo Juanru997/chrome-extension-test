@@ -1,0 +1,51 @@
+.logo-grabber-highlight {
+  outline: 2px solid #1976ff !important;
+  outline-offset: 2px !important;
+  cursor: crosshair !important;
+}
+
+#logo-grabber-toolbar {
+  position: fixed;
+  z-index: 2147483647;
+  background: #111;
+  color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font: 12px/1.2 Inter, system-ui, sans-serif;
+}
+
+#logo-grabber-toolbar button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#logo-grabber-copy {
+  background: #1f7a1f;
+  color: white;
+}
+
+#logo-grabber-save {
+  background: #245fc9;
+  color: white;
+}
+
+#logo-grabber-cancel {
+  background: #4d4d4d;
+  color: white;
+}
+
+#logo-grabber-status {
+  margin-left: 4px;
+  color: #b7f3b7;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
